@@ -13,7 +13,8 @@
     "#E11D48", "#EA580C", "#4F46E5", "#059669", "#7C3AED",
     "#0284C7", "#DB2777", "#0D9488", "#D97706", "#64748B",
   ];
-  const OTHER_COLOUR = "#CBD5E1";
+  const OTHER_COLOUR_TOKEN = "--ll-border-strong";
+  const OTHER_COLOUR_FALLBACK = "#CBD5E1";
   const MAX_UPLOAD_BYTES = 4 * 1000 * 1000; // keep in sync with api MAX_TEXT_BYTES
 
   const ROLE_BADGE = {
@@ -179,6 +180,12 @@
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
+  /** Read a design token so inline styles follow the active theme. */
+  function token(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+    return (v && v.trim()) || fallback || "";
+  }
+
   function escapeHtml(value) {
     return String(value == null ? "" : value)
       .replace(/&/g, "&amp;")
@@ -266,9 +273,9 @@
 
   function colourFor(clusterId) {
     const data = W.data;
-    if (!data) return OTHER_COLOUR;
+    if (!data) return token(OTHER_COLOUR_TOKEN, OTHER_COLOUR_FALLBACK);
     const idx = data.incidents.findIndex((i) => i.cluster_id === clusterId);
-    return idx >= 0 && idx < PALETTE.length ? PALETTE[idx] : OTHER_COLOUR;
+    return idx >= 0 && idx < PALETTE.length ? PALETTE[idx] : token(OTHER_COLOUR_TOKEN, OTHER_COLOUR_FALLBACK);
   }
 
   function downloadBlob(filename, text, mime) {
@@ -331,23 +338,27 @@
     const domain = incidents.slice(0, 10).map((i) => shortLabel(i));
     domain.push("Other groups");
     const range = incidents.slice(0, 10).map((i, idx) => PALETTE[idx % PALETTE.length]);
-    range.push(OTHER_COLOUR);
+    range.push(token(OTHER_COLOUR_TOKEN, OTHER_COLOUR_FALLBACK));
 
     const layers = [
       {
         mark: { type: "rect", opacity: 0.92, cornerRadiusTopLeft: 2, cornerRadiusTopRight: 2 },
         encoding: {
-          x: { field: "bucket", type: "temporal", title: null, axis: { format: "%H:%M", labelColor: "#64748B", grid: false } },
+          x: { field: "bucket", type: "temporal", title: null,
+               axis: { format: "%H:%M", labelColor: token("--ll-muted-2", "#64748B"), grid: false } },
           x2: { field: "bucket_end" },
           y: {
             field: "y0", type: "quantitative", title: "lines per " + (data.window ? data.window.bucket_label : "bucket"),
-            axis: { labelColor: "#64748B", titleColor: "#475569", gridColor: "#F1F5F9" },
+            axis: { labelColor: token("--ll-muted-2", "#64748B"),
+                    titleColor: token("--ll-muted", "#475569"),
+                    gridColor: token("--ll-surface-3", "#F1F5F9") },
           },
           y2: { field: "y1" },
           color: {
             field: "series", type: "nominal",
             scale: { domain: domain, range: range },
-            legend: { title: null, orient: "bottom", columns: 2, labelLimit: 320, labelColor: "#334155" },
+            legend: { title: null, orient: "bottom", columns: 2, labelLimit: 320,
+                    labelColor: token("--ll-ink-body", "#334155") },
           },
           tooltip: [
             { field: "bucket", type: "temporal", title: "Time", format: "%H:%M:%S" },
@@ -362,12 +373,13 @@
     if (trigger) {
       layers.push({
         data: { values: [{ t: trigger }] },
-        mark: { type: "rule", color: "#E11D48", strokeDash: [6, 4], size: 2 },
+        mark: { type: "rule", color: token("--ll-trigger", "#E11D48"), strokeDash: [6, 4], size: 2 },
         encoding: { x: { field: "t", type: "temporal" } },
       });
       layers.push({
         data: { values: [{ t: trigger, label: "⚡ likely trigger" }] },
-        mark: { type: "text", align: "left", dx: 5, dy: -2, color: "#E11D48", fontSize: 11, fontWeight: "bold", baseline: "top" },
+        mark: { type: "text", align: "left", dx: 5, dy: -2, color: token("--ll-trigger", "#E11D48"),
+                fontSize: 11, fontWeight: "bold", baseline: "top" },
         encoding: {
           x: { field: "t", type: "temporal" },
           y: { value: 0 },
@@ -410,7 +422,7 @@
     if (onset) {
       layers.push({
         data: { values: [{ t: onset }] },
-        mark: { type: "rule", color: "#E11D48", strokeDash: [3, 3], opacity: 0.65 },
+        mark: { type: "rule", color: token("--ll-trigger", "#E11D48"), strokeDash: [3, 3], opacity: 0.65 },
         encoding: { x: { field: "t", type: "temporal" } },
       });
     }
@@ -619,13 +631,13 @@
     view.appendChild(hero);
 
     const steps = [
-      ["01", "#E0F2FE", "#0369A1", "Tolerant Ingest",
+      ["01", "var(--ll-sev-info-line)", "var(--ll-sev-info-fg)", "Tolerant Ingest",
         "Extracts timestamps, severities & services across ISO, syslog, and Apache layouts without crashing on malformed lines."],
-      ["02", "#EEF2FF", "#4338CA", "Rule-Free Grouping",
+      ["02", "var(--ll-brand-soft)", "var(--ll-brand-ink)", "Rule-Free Grouping",
         "Masks IDs, IPs, durations & UUIDs, then runs Drain template mining to collapse thousands of lines into clean families."],
-      ["03", "#FEF3C7", "#B45309", "Transparent Ranking",
+      ["03", "var(--ll-sev-warn-bg)", "var(--ll-sev-warn-fg)", "Transparent Ranking",
         "Scores every group 0–100 across 5 explainable factors with live-tunable weights and per-card point breakdowns."],
-      ["04", "#FFE4E6", "#BE123C", "Trigger & Cascade",
+      ["04", "var(--ll-trigger-soft-2)", "var(--ll-trigger-ink)", "Trigger & Cascade",
         "Flags the earliest sharp onset as the likely trigger and links downstream services as timed knock-on effects."],
     ];
     const grid = el("div", "steps-grid");
@@ -711,7 +723,7 @@
       const cascade = el("div", "ll-cascade ll-fade");
       const text = el("div", "ll-cascade-text");
       text.innerHTML =
-        '<strong style="color:#BE123C;">' + escapeHtml(trigger.services.join(", ")) + "</strong> started failing first at " +
+        '<strong style="color:var(--ll-trigger-ink);">' + escapeHtml(trigger.services.join(", ")) + "</strong> started failing first at " +
         "<code>" + fmtClock(trigger.first_seen) + "</code> with <code>" + escapeHtml(trigger.template) + "</code> — " +
         "followed by <strong>" + knockOns.length + "</strong> probable knock-on group" + (knockOns.length === 1 ? "" : "s") +
         " within " + knockWindow + " min.";
@@ -997,7 +1009,7 @@
       '<div class="score-ring">' +
       '<div class="score-ring-graphic">' +
       '<svg width="46" height="46" viewBox="0 0 44 44" aria-hidden="true">' +
-      '<circle cx="22" cy="22" r="17" fill="none" stroke="#E2E8F0" stroke-width="3.6" />' +
+      '<circle cx="22" cy="22" r="17" fill="none" stroke="' + token("--ll-border", "#E2E8F0") + '" stroke-width="3.6" />' +
       '<circle cx="22" cy="22" r="17" fill="none" stroke="' + colour + '" stroke-width="3.6" ' +
       'stroke-linecap="round" stroke-dasharray="' + dash + '" stroke-dashoffset="' + offset + '" ' +
       'transform="rotate(-90 22 22)" />' +
@@ -1573,7 +1585,7 @@
   function wireSidebar() {
     $("#sidebar-brand").innerHTML =
       LOGO_SVG +
-      '<div><div class="sidebar-brand-name">Log<span style="color:#4F46E5;">Lens</span></div>' +
+      '<div><div class="sidebar-brand-name">Log<span style="color:var(--ll-brand);">Lens</span></div>' +
       '<div class="sidebar-brand-sub">Offline · Rule-Free</div></div>';
     $("#brand-logo").innerHTML = LOGO_SVG;
 
