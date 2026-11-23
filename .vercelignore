@@ -12,8 +12,10 @@ __pycache__/
 generate_sample_log.py
 requirements-dev.txt
 
-# sample_logs/ is copied into public/sample_logs/ (the copy that is served)
-sample_logs/
+# Only the repo-root copy is dropped; public/sample_logs/ is what the site serves.
+# NOTE: a bare `sample_logs/` would also match public/sample_logs/ (gitignore
+# patterns without a leading slash match at any depth), which 404s the demo log.
+/sample_logs/
 
 # Markdown other than the README, plus the pitch deck
 *.md
