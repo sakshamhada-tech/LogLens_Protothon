@@ -1,0 +1,6 @@
+# Development / local dependencies (tests, local server, TF-IDF fallback).
+-r requirements.txt
+pytest>=7
+httpx>=0.27
+uvicorn[standard]
+scikit-learn>=1.3

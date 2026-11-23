@@ -1,12 +1,11 @@
 {
-  "name": "Python 3",
-  // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
+  "name": "LogLens (Python 3.12 + FastAPI)",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
   "customizations": {
     "codespaces": {
       "openFiles": [
         "README.md",
-        "app.py"
+        "api/index.py"
       ]
     },
     "vscode": {
@@ -17,17 +16,23 @@
       ]
     }
   },
-  "updateContentCommand": "[ -f packages.txt ] && sudo apt update && sudo apt upgrade -y && sudo xargs apt install -y <packages.txt; [ -f requirements.txt ] && pip3 install --user -r requirements.txt; pip3 install --user streamlit; echo '✅ Packages installed and Requirements met'",
+  "updateContentCommand": "pip3 install --user -r requirements-dev.txt; echo '✅ Packages installed'",
   "postAttachCommand": {
-    "server": "streamlit run app.py --server.enableCORS false --server.enableXsrfProtection false"
+    "api": "uvicorn api.index:app --reload --host 0.0.0.0 --port 8000",
+    "web": "python3 -m http.server 3000 --directory public"
   },
   "portsAttributes": {
-    "8501": {
-      "label": "Application",
+    "8000": {
+      "label": "LogLens API",
+      "onAutoForward": "silent"
+    },
+    "3000": {
+      "label": "LogLens UI",
       "onAutoForward": "openPreview"
     }
   },
   "forwardPorts": [
-    8501
+    8000,
+    3000
   ]
 }

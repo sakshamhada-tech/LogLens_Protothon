@@ -14,9 +14,9 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import generate_sample_log as gen  # noqa: E402
-from cluster import DrainMiner, cluster_messages, normalise_message  # noqa: E402
-from parser import parse_text  # noqa: E402
-from rank import RankConfig, rank_incidents, score_breakdown  # noqa: E402
+from loglens.cluster import DrainMiner, cluster_messages, normalise_message  # noqa: E402
+from loglens.parser import parse_text  # noqa: E402
+from loglens.rank import RankConfig, rank_incidents, score_breakdown  # noqa: E402
 
 
 # --------------------------------------------------------------------------- #

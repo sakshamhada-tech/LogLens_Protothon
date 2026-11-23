@@ -17,11 +17,11 @@
      find the signal in 10,000 log lines
 ```
 
-**LogLens** turns a raw log file into a handful of ranked, explained incidents — which error groups exist, how big each one is, when each started, which services it hit and which one most likely set the others off. It runs locally with one command, needs no internet, no API keys and no hand-written rules about what an error "looks like".
+**LogLens** turns a raw log file into a handful of ranked, explained incidents — which error groups exist, how big each one is, when each started, which services it hit and which one most likely set the others off. It needs no API keys, no database and no hand-written rules about what an error "looks like", and it is deployed as a FastAPI function + static frontend on Vercel.
 
 On the bundled 10,000-line demo log it reports **8 incidents (+4 background-noise groups)** in about **0.3 seconds**, names the likely trigger (database timeouts in `payment-svc`) and marks the seven groups that started within minutes of it as probable knock-on effects.
 
-Deployed Link: https://loglens-protothon.streamlit.app/
+Deployed Link: `https://<your-project>.vercel.app` — replace this after your first Vercel deploy (see [Deployment](#deployment)).
 
 ---
 
@@ -33,10 +33,12 @@ Deployed Link: https://loglens-protothon.streamlit.app/
 4. [Why we built it this way](#why-we-built-it-this-way)
 5. [Installation](#installation)
 6. [Running LogLens](#running-loglens)
-7. [Checking that it works](#checking-that-it-works)
-8. [How it works under the hood](#how-it-works-under-the-hood)
-9. [Unfinished features and known limitations](#unfinished-features-and-known-limitations)
-10. [Project layout](#project-layout)
+7. [API reference](#api-reference)
+8. [Deployment](#deployment)
+9. [Checking that it works](#checking-that-it-works)
+10. [How it works under the hood](#how-it-works-under-the-hood)
+11. [Unfinished features and known limitations](#unfinished-features-and-known-limitations)
+12. [Project layout](#project-layout)
 
 ---
 
@@ -78,14 +80,17 @@ How the requirements map onto LogLens:
 
 ## What we built
 
-LogLens is a single-page **Streamlit** web app backed by a three-stage Python pipeline. Everything runs on the user's machine.
+LogLens is a **FastAPI** app (one Python function on Vercel) plus a **static HTML/CSS/vanilla-JS frontend**. The pipeline is pure Python + pandas/NumPy and runs inside the API function; the browser only renders JSON.
 
 ```text
- raw log text ──> parser.py ──> cluster.py ──> rank.py ──> app.py (Streamlit UI)
- (paste/upload)   timestamp,     normalise +    impact score,   banner, timeline,
-                  level,         Drain          trigger /       ranked incident
-                  service,       templates      knock-on /      cards, breakdown,
-                  message        (no rules)     background      raw lines, CSV
+                        ┌─────────────── Vercel ───────────────┐
+ raw log text ──POST──> │ api/index.py  ->  loglens/service.py │
+ (paste/upload)         │   (FastAPI)        parser -> cluster  │──JSON──┐
+                        │                    -> rank -> summary │        │
+                        └──────────────────────────────────────┘        v
+                                        public/ static frontend: banner, KPIs,
+                                        cascade strip, timeline, incident cards,
+                                        filters, CSV/raw-line downloads
 ```
 
 | Piece | File | What it does |
@@ -93,11 +98,13 @@ LogLens is a single-page **Streamlit** web app backed by a three-stage Python pi
 | **Ingest** | `parser.py` | Reads each line tolerantly: finds a timestamp (ISO-8601 in several spellings, syslog `Oct  9 03:00:01`, Apache/CLF, Unix epoch), a severity (`ERROR`, `[warn]`, `level=error`, …) and a service name (`[payment-svc]`, `payment-svc:`, `service=…`, `logger -`, syslog program, docker-compose prefix), and keeps the rest as the message. Stack-trace continuation lines are attached to the line above; anything unparseable is counted and skipped, never fatal. |
 | **Group** | `cluster.py` | Replaces variable fragments with placeholders (numbers, IDs, UUIDs, IPs, hex, durations, sizes, paths, URLs, e-mails) and then mines message *templates* with a from-scratch implementation of **Drain** (He et al., 2017). An alternative **TF-IDF + agglomerative clustering** grouping is one click away. Nothing in the code knows what any specific error looks like. |
 | **Rank** | `rank.py` | Scores every group 0–100 from five explainable factors — occurrences, severity, services affected, growth and start time — and assigns a role: **trigger**, **knock-on**, **background** or **independent**. The per-factor breakdown is shown on every card and the rows add up to the score. |
-| **Explain / UI** | `app.py` | Summary banner ("10,000 lines → 8 incidents"), parse statistics, likely-trigger callout, overall timeline coloured by incident, ranked incident cards (first/last seen, services, count, growth, sparkline, sample raw line, score breakdown), expandable raw-lines view, downloads (`.csv` of incidents, `.log` of any group's lines). Sidebar controls for severity floor, grouping method, similarity threshold, knock-on window and score weights. |
+| **Orchestration** | `loglens/service.py` | Runs parse → filter → cluster → rank and serialises everything to JSON-safe types (timestamps to ISO strings, NumPy scalars to plain numbers, NaN/inf to `null`). Also computes the window/bucket resolution, sparklines, the stacked timeline and the parsing-detail counts. |
+| **HTTP API** | `api/index.py` | FastAPI app with `GET /api/health` and `POST /api/analyze`: Pydantic validation, a 4 MB request cap (413), graceful 400 when TF-IDF/scikit-learn is unavailable, and a JSON 500 handler. |
+| **UI** | `public/index.html`, `public/style.css`, `public/app.js` | Static frontend: hero landing, summary banner ("10,000 lines → 8 incidents"), KPI strip, ⚡ trigger + cascade strip, Vega-Lite timeline and per-card sparklines, ranked incident cards (first/last seen, services, count, growth, sample raw line, score breakdown, raw-lines table), role/template/service filters, sort, CSV export, parsing details, team/about/contact dialogs. Sidebar controls for severity floor, grouping method, similarity threshold, knock-on window, card count and score weights (300 ms debounce + `AbortController`). |
 | **Demo data** | `generate_sample_log.py`, `sample_logs/sample.log` | Seeded generator for a realistic 10,000-line, 60-minute log from five services in three different line formats, with normal traffic, steady background noise, deliberately malformed lines and a scripted cascade (DB timeouts → upstream timeouts → 502s → queue saturation → publish failures → circuit breaker → expired reservations). |
-| **Tests** | `tests/test_pipeline.py` | 23 pytest cases: parser formats, normaliser, Drain and TF-IDF grouping, scoring, and an end-to-end check that the planted root cause is found. |
+| **Tests** | `tests/test_pipeline.py`, `tests/test_api.py` | 23 pipeline cases (parser formats, normaliser, Drain and TF-IDF grouping, scoring, end-to-end root-cause check) plus 22 API cases (health, happy path, timeline stacking, strict JSON, 413/422, edge cases, rewrite compatibility). |
 
-**Stack:** Python 3.11 · Streamlit · pandas · NumPy · scikit-learn · Altair. No paid APIs, no external services, works offline.
+**Stack:** Python 3.12 (Vercel runtime) · FastAPI · pandas · NumPy · static HTML/CSS/JS · Vega-Lite (pinned CDN) · pytest. scikit-learn is a **dev-only** dependency (see [Why TF-IDF is off in the hosted build](#why-tf-idf-is-off-in-the-hosted-build)). No paid APIs, no database, no external services.
 
 ---
 
@@ -109,7 +116,7 @@ LogLens is a single-page **Streamlit** web app backed by a three-stage Python pi
 
 **Why heuristics for ranking instead of a model?** An on-call engineer needs to *trust* the ordering. Five named factors with visible weights, a breakdown table on every card and sliders to change the weights are something a person can argue with; a learned score is not. The same goes for the trigger/knock-on logic: it is explained in plain words on the card ("earliest group with a clear onset", "started 18 s after the trigger in checkout-svc").
 
-**Why Streamlit?** One file, one command (`streamlit run app.py`), no front-end build, runs on a laptop with no network — which is where a 3 a.m. investigation actually happens.
+**Why FastAPI + a static frontend?** The original version was a Streamlit app, but Streamlit needs a long-lived server with WebSockets and cannot run as a Vercel serverless function. Splitting the pipeline into a stateless JSON API and a build-free static frontend keeps the exact same pipeline and design while deploying on Vercel's free tier with no Node build step — the single biggest source of Vercel build failures — and it still runs offline on a laptop (`python dev.py`).
 
 **Why a generated demo log?** Real incident logs are confidential. A seeded generator gives a realistic multi-service, multi-format file with a *known* answer, which means the result can be verified rather than just admired (see [Checking that it works](#checking-that-it-works)).
 
@@ -119,9 +126,10 @@ LogLens is a single-page **Streamlit** web app backed by a three-stage Python pi
 
 ### Prerequisites
 
-- **Python 3.11** (3.10 or newer should work; everything was developed and tested on 3.11)
-- **pip** (ships with Python) and **git**
+- **Python 3.12** for the Vercel runtime (`.python-version`); locally, Python 3.10+ works (developed and verified on 3.11 and 3.12).
+- **pip** (ships with Python) and **git**.
 - Any OS — Windows, macOS or Linux. No GPU, no Docker, no internet after `pip install`.
+- Optional: the [Vercel CLI](https://vercel.com/docs/cli) (`npm i -g vercel`) for `vercel dev` / `vercel --prod`.
 
 Check your Python first:
 
@@ -137,21 +145,19 @@ git clone https://github.com/sakshamhada-tech/LogLens.git
 cd LogLens
 ```
 
-(Or download the ZIP from GitHub and open a terminal inside the extracted folder.)
-
 ### 2. Create and activate a virtual environment
 
 **Windows — PowerShell**
 
 ```powershell
-py -3.11 -m venv .venv          # or:  python -m venv .venv
+py -3.12 -m venv .venv          # or:  python -m venv .venv
 .venv\Scripts\Activate.ps1
 ```
 
 **Windows — Command Prompt**
 
 ```bat
-py -3.11 -m venv .venv
+py -3.12 -m venv .venv
 .venv\Scripts\activate.bat
 ```
 
@@ -162,61 +168,204 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-Your prompt should now start with `(.venv)`.
-
 ### 3. Install the dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 ```
 
-This pulls Streamlit, pandas, NumPy, scikit-learn, Altair and pytest (a few hundred MB on disk). It is the only step that needs internet.
+Two requirement files exist on purpose:
+
+| File | Contents | Used by |
+|---|---|---|
+| `requirements.txt` | `fastapi`, `pandas`, `numpy` — **runtime only** | Vercel's function bundle (kept under the 250 MB unzipped limit) |
+| `requirements-dev.txt` | `-r requirements.txt` + `pytest`, `httpx`, `uvicorn`, `scikit-learn` | your laptop, the test suite, the TF-IDF option |
 
 ### Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `python3.11: command not found` / "no such file or directory" | You don't have a 3.11 launcher by that name. Use whatever runs Python 3.10+ for you: `python -m venv .venv`, `python3 -m venv .venv` or `py -3 -m venv .venv`. |
+| `python3.12: command not found` | Use whatever runs Python 3.10+: `python -m venv .venv`, `py -3 -m venv .venv`. |
 | PowerShell: *"running scripts is disabled on this system"* | Run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, or use Command Prompt and `.venv\Scripts\activate.bat`. |
-| `streamlit: command not found` | The venv isn't activated. Activate it (step 2) or run `python -m streamlit run app.py`. |
-| Port 8501 already in use | `streamlit run app.py --server.port 8502` |
-| Streamlit asks for an e-mail on first start | Just press **Enter**. |
+| `uvicorn: command not found` | The venv isn't activated, or you installed only `requirements.txt`. Activate it and `pip install -r requirements-dev.txt`. |
+| `ModuleNotFoundError: fastapi` / `pandas` | Same cause — install the dev requirements. |
+| Port 8000 already in use | `uvicorn api.index:app --port 8010` (and open that port). |
 | VS Code uses the wrong Python | `Ctrl/Cmd + Shift + P` → **Python: Select Interpreter** → pick the one inside `.venv`. |
 
 ---
 
 ## Running LogLens
 
+### The quick way (one process, one origin)
+
 ```bash
-streamlit run app.py
+python dev.py
 ```
 
-A browser tab opens at <http://localhost:8501> (if it doesn't, open the URL printed in the terminal). Stop the app with `Ctrl + C` in the terminal.
+Open <http://127.0.0.1:8000>. `dev.py` mounts the same FastAPI app Vercel runs **and** serves `public/` as static files, so the frontend and the API share one origin exactly as they do in production. It is excluded from the deployment bundle.
+
+### The production-faithful way (Vercel CLI)
+
+```bash
+vercel dev          # serves public/ statically and api/index.py as a function
+```
+
+This is the closest thing to the real deployment; use it when checking rewrites, headers or the Python runtime.
+
+### The manual way (two terminals)
+
+```bash
+# terminal 1 — API
+uvicorn api.index:app --reload --port 8000
+
+# terminal 2 — static frontend (from the repo root)
+python -m http.server 3000 --directory public
+```
+
+The browser must reach both on the same origin; open <http://127.0.0.1:3000> only if you add a proxy, otherwise prefer `python dev.py` or `vercel dev`. `uvicorn` alone serves `/api/*` only.
 
 ### Using the app
 
 1. **Load logs** (sidebar, step 1) in any of three ways:
-   - **📂 Load sample log** — the bundled 10,000-line demo (fastest way to see it work);
-   - **Upload** a `.log` / `.txt` / `.out` file;
+   - **📂 Load 10K sample log** — the bundled 10,000-line demo (fastest way to see it work);
+   - **Upload** a `.log` / `.txt` / `.text` / `.out` file (≤ 4 MB on the hosted deployment);
    - **Paste** lines into the text box and click **Analyse pasted text**.
 2. **Read the results** (main pane):
-   - the green **banner** — `N lines → K incidents (+B background noise groups)` and how long the analysis took;
-   - the **metrics row** — lines in file, parsed, skipped, lines at the chosen severity, services, and **"Log covers"**, which is the period between the first and last timestamp *inside the log* (e.g. 60 min), not the processing time;
-   - the **⚡ likely trigger** callout — the earliest group with a clear onset, with its knock-ons listed as `+18 s`, `+40 s`, … after it;
-   - the **timeline** — lines per time bucket, coloured by incident;
-   - the **ranked incident cards** — template, impact score, role badge (⚡ trigger · ↳ knock-on · 〰 background), first/last seen, services, count, growth, a sparkline, a sample raw line, the score breakdown, and an expander with the raw lines and a download button;
-   - **Download incidents (.csv)** at the bottom for the summary table.
-3. **Tune** (sidebar, step 2) if needed: minimum severity (default `WARN`), grouping method, similarity threshold (raise it if two different errors were merged, lower it if one error was split), knock-on window, number of cards, score weights.
+   - the **banner** — `N lines → K incidents (+B background noise groups)` and how long the analysis took;
+   - the **KPI strip** — lines in file, parsed, skipped, lines at the chosen severity, services, and the span of the log itself (not processing time);
+   - the **⚡ root-cause trigger + cascade strip** — the earliest group with a clear onset, with knock-ons listed as `+18 s`, `+40 s`, … after it;
+   - the **timeline** — lines per time bucket, coloured by incident, with a dashed rule at the trigger onset;
+   - the **ranked incident cards** — template, impact ring, role badge (⚡ trigger · ↳ knock-on · 〰 background), first/last seen, services, count, growth, sparkline, tabs for the sample raw line, the score breakdown and all raw lines, plus a per-incident `.log` download;
+   - **All groups as a table / CSV export** and **Parsing details** at the bottom.
+3. **Filter and sort** — role pills, template/service search, service multi-select and sort order all work client-side on the returned incidents; the **Incident cards to show** control limits how many render.
+4. **Tune** (sidebar, step 2): minimum severity (default `WARN`), grouping method (Drain; TF-IDF is disabled in the hosted build), similarity threshold, knock-on window, card count, score weights. Each change re-runs the analysis after a 300 ms debounce, cancelling the previous request.
 
 Templates use placeholders: `<NUM>`, `<IP>`, `<DUR>`, `<UUID>`, `<PATH>`, … are inserted by the normaliser, and `<*>` marks a position that Drain found to vary between lines of the same group.
 
 ### Other commands
 
 ```bash
-python -m pytest -q                                     # run the 23 tests
+python -m pytest -q                                     # run all 45 tests
 python generate_sample_log.py                           # regenerate sample_logs/sample.log (10,000 lines, seed 42)
-python generate_sample_log.py --lines 50000 --seed 7 --out big.log   # a different / bigger demo file
+python generate_sample_log.py --lines 50000 --seed 7 --out big.log
+python -c "from generate_sample_log import generate; from pathlib import Path; from datetime import datetime; Path('public/sample_logs/sample.log').write_text('\n'.join(generate(10000, 42, datetime(2026,10,9,2,30), 60, 22)) + '\n')"
 ```
+
+---
+
+## API reference
+
+Base URL: the deployment root (`https://<your-project>.vercel.app`). All responses are JSON; the API is stateless and keeps nothing between requests.
+
+### `GET /api/health`
+
+```bash
+curl https://<your-project>.vercel.app/api/health
+```
+
+```json
+{ "status": "ok" }
+```
+
+### `POST /api/analyze`
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `text` | string | `""` | Raw log text. Max **4,000,000 bytes** (utf-8) → `413` above that. |
+| `min_severity` | `"WARN"` \| `"ERROR"` \| `"INFO"` \| `"DEBUG"` | `"WARN"` | Lines below this level are counted but not grouped. |
+| `method` | `"drain"` \| `"tfidf"` | `"drain"` | `"tfidf"` returns `400` when scikit-learn is not installed (the hosted build). |
+| `similarity` | float 0.3–0.9 | `0.5` | Higher = stricter grouping. |
+| `knock_on_minutes` | int 1–30 | `5` | Window after the trigger in which other groups become knock-ons. |
+| `weights` | object | `{"count":0.30,"severity":0.25,"services":0.20,"growth":0.15,"start":0.10}` | Each 0–1. |
+
+```bash
+curl -X POST https://<your-project>.vercel.app/api/analyze \
+  -H 'Content-Type: application/json' \
+  -d '{"text":"2026-10-09 10:05:00 ERROR [database] Connection refused\n2026-10-09 10:05:20 ERROR [web] Login failed: database unavailable\n2026-10-09 10:05:25 ERROR [web] Login failed: database unavailable","min_severity":"WARN"}'
+```
+
+Response (abridged — every key is always present):
+
+```json
+{
+  "error": null,
+  "empty_reason": null,
+  "stats": {
+    "total_lines": 3, "parsed": 3, "continuation": 0, "skipped": 0, "blank": 0,
+    "skipped_samples": [], "n_unique": 2, "seconds": 0.01,
+    "candidate_count": 3, "n_services_total": 2, "services_detected_count": 2
+  },
+  "window": { "t0": "2026-10-09T10:05:00", "t1": "2026-10-09T10:05:25",
+              "span_s": 25.0, "bucket_s": 10, "bucket_label": "10 s" },
+  "notes": [],
+  "trigger_id": 0,
+  "fallback_mode": false,
+  "incidents": [
+    {
+      "rank": 1, "cluster_id": 0, "template": "Connection refused", "count": 1,
+      "max_severity": "ERROR", "services": ["database"], "n_services": 1,
+      "first_seen": "2026-10-09T10:05:00", "last_seen": "2026-10-09T10:05:00",
+      "growth_ratio": 1.0, "count_earlier": 1, "role": "trigger",
+      "role_detail": "…", "lag_s": 0.0, "score": 61.2,
+      "score_breakdown": [{ "Factor": "Occurrences", "Evidence": "1 lines",
+                            "Normalised": 0.31, "Weight": 0.3, "Points": 9.3 }],
+      "sample_raw": "2026-10-09 10:05:00 ERROR [database] Connection refused",
+      "sample_line_no": 1, "onset": "2026-10-09T10:05:00",
+      "sparkline": [{ "t": "2026-10-09T10:05:00", "lines": 1 }],
+      "raw_lines": [{ "line_no": 1, "timestamp": "2026-10-09T10:05:00",
+                      "severity": "ERROR", "service": "database",
+                      "raw": "2026-10-09 10:05:00 ERROR [database] Connection refused" }],
+      "raw_lines_total": 1
+    }
+  ],
+  "timeline": [{ "bucket": "2026-10-09T10:05:00", "bucket_end": "2026-10-09T10:05:10",
+                 "incident_cluster_id": 0, "series": "#1 database: Connection refused",
+                 "lines": 1, "y0": 0, "y1": 1 }],
+  "severity_counts": { "ERROR": 3 },
+  "service_counts": { "database": 1, "web": 2 }
+}
+```
+
+Edge cases return **HTTP 200** with a reason instead of an error page:
+
+| `empty_reason` | When |
+|---|---|
+| `empty_input` | `text` is empty or whitespace. |
+| `no_timestamps` | Nothing parseable — `stats.skipped_samples` lists the first offending lines. |
+| `no_severity_lines` | Parsed lines exist but none at/above `min_severity`. |
+
+Other status codes: `413` (payload over 4 MB), `422` (validation), `400` (TF-IDF requested without scikit-learn), `500` (unexpected — always JSON `{"detail": "..."}`).
+
+---
+
+## Deployment
+
+The repo is already configured for Vercel: `vercel.json` rewrites `/api/(.*)` to the `api/index.py` function, `public/` is served as static hosting, and `.python-version` pins Python 3.12. There is **no build step**. The function carries a tiny middleware so it answers correctly whether the platform forwards the original path (`/api/analyze`) or the rewrite destination (`/api/index`), which removes the most common "404 on the API" failure mode.
+
+### Option A — Git import (recommended, no CLI)
+
+1. Push the repository to GitHub.
+2. Go to <https://vercel.com/new> and **import** the repository.
+3. Leave **Framework Preset** on **Other**, and leave **Build Command**, **Output Directory**, **Install Command** and **Root Directory** empty/default.
+4. Click **Deploy**.
+
+Vercel then installs `requirements.txt`, packs `api/index.py` (plus `loglens/`), serves `public/`, and applies the rewrites and cache headers from `vercel.json`. The first build takes a couple of minutes because of pandas/NumPy.
+
+### Option B — CLI
+
+```bash
+npm i -g vercel
+vercel            # preview deployment
+vercel --prod     # production
+```
+
+### After the first deploy
+
+Update the `Deployed Link:` line at the top of this README with the URL Vercel gives you, then commit it. Nothing else needs configuring — there are no environment variables, no secrets and no database.
+
+### Why TF-IDF is off in the hosted build
+
+scikit-learn (plus scipy) is roughly 150 MB on its own; with pandas and NumPy the unzipped function would approach or cross Vercel's 250 MB limit and the deployment would fail. The grouping-method control therefore keeps the TF-IDF option **visible but disabled**, with the tooltip *"Available in local/dev install only"*, and the API returns `400` with the same message if it is requested anyway. Install `requirements-dev.txt` and run locally to use it.
 
 ---
 
@@ -226,7 +375,7 @@ You don't need to be a logging expert to verify LogLens: every test input has a 
 
 ### 1. The sample log has an answer key (30 seconds)
 
-The demo log is generated from a script (described at the top of `generate_sample_log.py`): an hour of normal traffic, four harmless warnings that were there all along, and at **02:52:00** the primary database behind `payment-svc` starts timing out, which breaks seven other things over the next four minutes. Click **📂 Load sample log** and compare:
+The demo log is generated from a script (described at the top of `generate_sample_log.py`): an hour of normal traffic, four harmless warnings that were there all along, and at **02:52:00** the primary database behind `payment-svc` starts timing out, which breaks seven other things over the next four minutes. Click **📂 Load 10K sample log** and compare:
 
 | You should see | Meaning |
 |---|---|
@@ -238,7 +387,7 @@ The demo log is generated from a script (described at the top of `generate_sampl
 
 ### 2. Write your own story (2 minutes)
 
-Paste the block below into the sidebar and click **Analyse pasted text**. The story *you* planted: a backup job has been nagging about disk space all along; at 10:05:00 the **database** goes down; 20 seconds later the **web** app starts failing logins because of it.
+Click **✨ Try 22-line mini story** (or paste the block below into the sidebar and press **Analyse pasted text**). The story *you* planted: a backup job has been nagging about disk space all along; at 10:05:00 the **database** goes down; 20 seconds later the **web** app starts failing logins because of it.
 
 <details>
 <summary>22-line mini log (click to expand)</summary>
@@ -286,7 +435,7 @@ Expected result:
 | Move every `[database]` line 3 minutes later, so the web app fails *first* | the trigger flips to **web**; database becomes "knock-on (+3 min)" |
 | Delete the dates and times | a red message: *No lines with a recognisable timestamp were found* — no crash |
 | Paste something that isn't a log at all (a crash dump, a poem) | the same polite message |
-| `python -m pytest -q` | `23 passed` |
+| `python -m pytest -q` | `45 passed` |
 
 ---
 
@@ -350,10 +499,12 @@ This is a hackathon prototype. The following are **not** done, and we would rath
 **Product**
 
 - **Single file, in memory, one shot.** Measured at 10,000 lines in ~0.3 s and 100,000 lines in ~1.5 s; not tested beyond that, and multi-GB files will not fit. No streaming / live tail, no multiple files, no correlation across files or days.
-- **Nothing is saved.** No history between runs, no login, no sharing — only the `.csv` / `.log` downloads.
-- **No integrations** — no Slack/PagerDuty alerts, no scheduled runs, no API.
-- **UI is not covered by the automated tests.** The 23 tests cover the parsing/grouping/ranking pipeline; the Streamlit UI was exercised by hand and with Streamlit's `AppTest` during development only.
-- **Not packaged** — no Dockerfile, no PyPI package, no hosted demo; it runs from a clone.
+- **4 MB per request on the hosted deployment.** This is a hard limit of the Vercel function body (~4.5 MB); LogLens rejects anything larger with a friendly `413` / sidebar error rather than failing mid-upload. On a laptop there is no such cap (the browser refuses only > 4 MB uploads in the UI, for the same reason). The **10K sample** (≈1.3 MB) is well inside it; split bigger files and analyse them in parts.
+- **TF-IDF grouping is disabled in the hosted build** (see [Why TF-IDF is off in the hosted build](#why-tf-idf-is-off-in-the-hosted-build)). Drain remains the default and the only engine online; install the dev requirements locally for TF-IDF.
+- **Stateless, by design.** Nothing is written to disk, there is no database, no session and no cache between requests — identical inputs give identical output. Downloads (`.csv` of incidents, `.log` of a group's lines) are generated in the browser.
+- **No integrations** — no Slack/PagerDuty alerts, no scheduled runs, no auth. The JSON API is public and unauthenticated, so do not post confidential logs to a public deployment.
+- **Serverless cold starts.** The first request after idle can take ~1–2 s while the function boots (pandas import); warm analyses stay around 0.3 s.
+- **UI coverage.** The 45 automated tests cover the pipeline and the HTTP API; the frontend is verified with a DOM harness (jsdom) plus real Vega-Lite compilation of the chart specs, not with a real browser in CI.
 - **Not evaluated on non-English logs** or on logs from the wild beyond a handful of formats we tried; the demo file is synthetic.
 
 What we would build next, in order: a line-order / relative-timestamp fallback, proper JSON-line parsing, smarter service discovery, stack-trace-aware grouping, and a merge/split feedback control on the incident cards.
@@ -363,12 +514,29 @@ What we would build next, in order: a line-order / relative-timestamp fallback, 
 ## Project layout
 
 ```text
-app.py                  Streamlit UI (single command: streamlit run app.py)
-parser.py               tolerant log parsing -> pandas DataFrame
-cluster.py              normalisation + Drain template miner + TF-IDF fallback
-rank.py                 impact scoring, score breakdown, trigger / knock-on roles
-generate_sample_log.py  seeded demo-log generator
-sample_logs/sample.log  10,000-line demo (5 services, one root cause, cascading failures)
-tests/test_pipeline.py  pytest suite (23 cases)
-requirements.txt        streamlit, pandas, numpy, scikit-learn, altair, pytest
+api/index.py               FastAPI app (`app`) — validation + JSON only; Vercel ASGI entrypoint
+loglens/__init__.py        package exports
+loglens/parser.py          tolerant log parsing -> pandas DataFrame
+loglens/cluster.py         normalisation + Drain template miner + lazy TF-IDF fallback
+loglens/rank.py            impact scoring, score breakdown, trigger / knock-on roles
+loglens/service.py         analyze(): orchestrates the pipeline, returns JSON-safe dicts
+public/index.html          single-page frontend shell (semantic, accessible)
+public/style.css           light-mode design system (tokens, cards, badges, dialogs)
+public/app.js              all UI logic: fetch/debounce/abort, cards, filters, charts, CSV
+public/assets/team/*.jpg   team avatars used by the Team ByteForce dialog
+public/sample_logs/sample.log   10,000-line demo served statically ("Load 10K sample")
+generate_sample_log.py     seeded demo-log generator (dev tool, not deployed)
+sample_logs/sample.log     source copy of the demo log
+tests/test_pipeline.py     23 pipeline tests
+tests/test_api.py          22 FastAPI tests
+dev.py                     local launcher: API + public/ on one origin (not deployed)
+requirements.txt           runtime only: fastapi, pandas, numpy
+requirements-dev.txt       -r requirements.txt + pytest, httpx, uvicorn, scikit-learn
+vercel.json                rewrites, function config, cache headers
+.python-version            3.12
+.vercelignore              keeps tests/dev files out of the deployment
 ```
+
+### A note on the migration
+
+LogLens started as a Streamlit app (`app.py`) for the hackathon submission. Streamlit needs a long-lived server with WebSockets, so it cannot run on Vercel; the UI was rebuilt as static HTML/CSS/JS calling a FastAPI function, with the parser, clustering and ranking code moved into `loglens/` **unchanged**. The git history still contains the Streamlit version.
