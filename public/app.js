@@ -13,7 +13,8 @@
     "#E11D48", "#EA580C", "#4F46E5", "#059669", "#7C3AED",
     "#0284C7", "#DB2777", "#0D9488", "#D97706", "#64748B",
   ];
-  const OTHER_COLOUR = "#CBD5E1";
+  const OTHER_COLOUR_TOKEN = "--ll-border-strong";
+  const OTHER_COLOUR_FALLBACK = "#CBD5E1";
   const MAX_UPLOAD_BYTES = 4 * 1000 * 1000; // keep in sync with api MAX_TEXT_BYTES
 
   const ROLE_BADGE = {
@@ -179,6 +180,12 @@
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
 
+  /** Read a design token so inline styles follow the active theme. */
+  function token(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name);
+    return (v && v.trim()) || fallback || "";
+  }
+
   function escapeHtml(value) {
     return String(value == null ? "" : value)
       .replace(/&/g, "&amp;")
@@ -266,9 +273,9 @@
 
   function colourFor(clusterId) {
     const data = W.data;
-    if (!data) return OTHER_COLOUR;
+    if (!data) return token(OTHER_COLOUR_TOKEN, OTHER_COLOUR_FALLBACK);
     const idx = data.incidents.findIndex((i) => i.cluster_id === clusterId);
-    return idx >= 0 && idx < PALETTE.length ? PALETTE[idx] : OTHER_COLOUR;
+    return idx >= 0 && idx < PALETTE.length ? PALETTE[idx] : token(OTHER_COLOUR_TOKEN, OTHER_COLOUR_FALLBACK);
   }
 
   function downloadBlob(filename, text, mime) {
@@ -331,23 +338,27 @@
     const domain = incidents.slice(0, 10).map((i) => shortLabel(i));
     domain.push("Other groups");
     const range = incidents.slice(0, 10).map((i, idx) => PALETTE[idx % PALETTE.length]);
-    range.push(OTHER_COLOUR);
+    range.push(token(OTHER_COLOUR_TOKEN, OTHER_COLOUR_FALLBACK));
 
     const layers = [
       {
         mark: { type: "rect", opacity: 0.92, cornerRadiusTopLeft: 2, cornerRadiusTopRight: 2 },
         encoding: {
-          x: { field: "bucket", type: "temporal", title: null, axis: { format: "%H:%M", labelColor: "#64748B", grid: false } },
+          x: { field: "bucket", type: "temporal", title: null,
+               axis: { format: "%H:%M", labelColor: token("--ll-muted-2", "#64748B"), grid: false } },
           x2: { field: "bucket_end" },
           y: {
             field: "y0", type: "quantitative", title: "lines per " + (data.window ? data.window.bucket_label : "bucket"),
-            axis: { labelColor: "#64748B", titleColor: "#475569", gridColor: "#F1F5F9" },
+            axis: { labelColor: token("--ll-muted-2", "#64748B"),
+                    titleColor: token("--ll-muted", "#475569"),
+                    gridColor: token("--ll-surface-3", "#F1F5F9") },
           },
           y2: { field: "y1" },
           color: {
             field: "series", type: "nominal",
             scale: { domain: domain, range: range },
-            legend: { title: null, orient: "bottom", columns: 2, labelLimit: 320, labelColor: "#334155" },
+            legend: { title: null, orient: "bottom", columns: 2, labelLimit: 320,
+                    labelColor: token("--ll-ink-body", "#334155") },
           },
           tooltip: [
             { field: "bucket", type: "temporal", title: "Time", format: "%H:%M:%S" },
@@ -362,12 +373,13 @@
     if (trigger) {
       layers.push({
         data: { values: [{ t: trigger }] },
-        mark: { type: "rule", color: "#E11D48", strokeDash: [6, 4], size: 2 },
+        mark: { type: "rule", color: token("--ll-trigger", "#E11D48"), strokeDash: [6, 4], size: 2 },
         encoding: { x: { field: "t", type: "temporal" } },
       });
       layers.push({
         data: { values: [{ t: trigger, label: "⚡ likely trigger" }] },
-        mark: { type: "text", align: "left", dx: 5, dy: -2, color: "#E11D48", fontSize: 11, fontWeight: "bold", baseline: "top" },
+        mark: { type: "text", align: "left", dx: 5, dy: -2, color: token("--ll-trigger", "#E11D48"),
+                fontSize: 11, fontWeight: "bold", baseline: "top" },
         encoding: {
           x: { field: "t", type: "temporal" },
           y: { value: 0 },
@@ -410,7 +422,7 @@
     if (onset) {
       layers.push({
         data: { values: [{ t: onset }] },
-        mark: { type: "rule", color: "#E11D48", strokeDash: [3, 3], opacity: 0.65 },
+        mark: { type: "rule", color: token("--ll-trigger", "#E11D48"), strokeDash: [3, 3], opacity: 0.65 },
         encoding: { x: { field: "t", type: "temporal" } },
       });
     }
@@ -619,13 +631,13 @@
     view.appendChild(hero);
 
     const steps = [
-      ["01", "#E0F2FE", "#0369A1", "Tolerant Ingest",
+      ["01", "var(--ll-sev-info-line)", "var(--ll-sev-info-fg)", "Tolerant Ingest",
         "Extracts timestamps, severities & services across ISO, syslog, and Apache layouts without crashing on malformed lines."],
-      ["02", "#EEF2FF", "#4338CA", "Rule-Free Grouping",
+      ["02", "var(--ll-brand-soft)", "var(--ll-brand-ink)", "Rule-Free Grouping",
         "Masks IDs, IPs, durations & UUIDs, then runs Drain template mining to collapse thousands of lines into clean families."],
-      ["03", "#FEF3C7", "#B45309", "Transparent Ranking",
+      ["03", "var(--ll-sev-warn-bg)", "var(--ll-sev-warn-fg)", "Transparent Ranking",
         "Scores every group 0–100 across 5 explainable factors with live-tunable weights and per-card point breakdowns."],
-      ["04", "#FFE4E6", "#BE123C", "Trigger & Cascade",
+      ["04", "var(--ll-trigger-soft-2)", "var(--ll-trigger-ink)", "Trigger & Cascade",
         "Flags the earliest sharp onset as the likely trigger and links downstream services as timed knock-on effects."],
     ];
     const grid = el("div", "steps-grid");
@@ -711,7 +723,7 @@
       const cascade = el("div", "ll-cascade ll-fade");
       const text = el("div", "ll-cascade-text");
       text.innerHTML =
-        '<strong style="color:#BE123C;">' + escapeHtml(trigger.services.join(", ")) + "</strong> started failing first at " +
+        '<strong style="color:var(--ll-trigger-ink);">' + escapeHtml(trigger.services.join(", ")) + "</strong> started failing first at " +
         "<code>" + fmtClock(trigger.first_seen) + "</code> with <code>" + escapeHtml(trigger.template) + "</code> — " +
         "followed by <strong>" + knockOns.length + "</strong> probable knock-on group" + (knockOns.length === 1 ? "" : "s") +
         " within " + knockWindow + " min.";
@@ -997,7 +1009,7 @@
       '<div class="score-ring">' +
       '<div class="score-ring-graphic">' +
       '<svg width="46" height="46" viewBox="0 0 44 44" aria-hidden="true">' +
-      '<circle cx="22" cy="22" r="17" fill="none" stroke="#E2E8F0" stroke-width="3.6" />' +
+      '<circle cx="22" cy="22" r="17" fill="none" stroke="' + token("--ll-border", "#E2E8F0") + '" stroke-width="3.6" />' +
       '<circle cx="22" cy="22" r="17" fill="none" stroke="' + colour + '" stroke-width="3.6" ' +
       'stroke-linecap="round" stroke-dasharray="' + dash + '" stroke-dashoffset="' + offset + '" ' +
       'transform="rotate(-90 22 22)" />' +
@@ -1573,7 +1585,7 @@
   function wireSidebar() {
     $("#sidebar-brand").innerHTML =
       LOGO_SVG +
-      '<div><div class="sidebar-brand-name">Log<span style="color:#4F46E5;">Lens</span></div>' +
+      '<div><div class="sidebar-brand-name">Log<span style="color:var(--ll-brand);">Lens</span></div>' +
       '<div class="sidebar-brand-sub">Offline · Rule-Free</div></div>';
     $("#brand-logo").innerHTML = LOGO_SVG;
 
@@ -1676,6 +1688,136 @@
     $("#sidebar-toggle").setAttribute("aria-expanded", "false");
   }
 
+
+  // ----------------------------------------------------------------- theming
+  const THEME_KEY = "ll-theme";
+
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+  }
+
+  function systemTheme() {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark" : "light";
+  }
+
+  function storedTheme() {
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      return v === "light" || v === "dark" ? v : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function syncThemeToggle(theme) {
+    const btn = $("#theme-toggle");
+    if (!btn) return;
+    const isDark = theme === "dark";
+    btn.setAttribute("aria-pressed", isDark ? "true" : "false");
+    btn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+  }
+
+  const REDUCED_MOTION = () =>
+    !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  /* Kept in sync with the llWipe* / llSheet* keyframes in style.css. */
+  const WIPE_MS = 620;          // view-transition clip, and the fallback sheet
+
+  /** The theme swap itself. Charts bake their colours at spec-build time, so a
+      re-render is needed for them to pick up the new tokens. */
+  function swapTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    syncThemeToggle(theme);
+    if (W.text && W.data) render();
+  }
+
+  const WIPE_CLASSES = ["wipe-down", "wipe-up",
+                        "theme-wipe", "theme-wipe-to-dark", "theme-wipe-to-light", "theme-wipe-reveal"];
+  let wipeTimer = null;
+
+  function clearWipe() {
+    if (wipeTimer) { clearTimeout(wipeTimer); wipeTimer = null; }
+    document.documentElement.classList.remove.apply(document.documentElement.classList, WIPE_CLASSES);
+  }
+
+  /**
+   * Switch theme with a directional wipe: dark sweeps DOWN from the top, light
+   * sweeps UP from the bottom.
+   *
+   * Preferred path is the View Transitions API. The page is snapshotted, the
+   * theme is swapped inside the callback, and the NEW snapshot is clipped in
+   * over the old one — so the real content is always visible and you watch it
+   * change theme, rather than having a solid colour dropped over it.
+   *
+   * Fallback: an opaque sheet in the destination colour sweeps across, then
+   * the swap happens underneath it.
+   */
+  function applyTheme(theme, opts) {
+    const options = opts || {};
+    const root = document.documentElement;
+    const dir = theme === "dark" ? "wipe-down" : "wipe-up";
+
+    if (!options.animate || REDUCED_MOTION()) {
+      clearWipe();
+      swapTheme(theme);
+      return;
+    }
+
+    clearWipe();
+
+    if (typeof document.startViewTransition === "function") {
+      root.classList.add(dir);
+      const vt = document.startViewTransition(() => swapTheme(theme));
+      const done = () => { root.classList.remove("wipe-down", "wipe-up"); };
+      vt.finished.then(done, done);
+      return;
+    }
+
+    // fallback: solid sheet, swap underneath it, then dissolve
+    root.classList.add("theme-wipe");
+    root.classList.add(theme === "dark" ? "theme-wipe-to-dark" : "theme-wipe-to-light");
+    wipeTimer = setTimeout(() => {
+      swapTheme(theme);
+      root.classList.add("theme-wipe-reveal");
+      wipeTimer = setTimeout(clearWipe, 240);
+    }, WIPE_MS);
+  }
+
+  function setTheme(theme, persist, animate) {
+    applyTheme(theme, { animate: animate });
+    if (persist) {
+      try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* private mode */ }
+    }
+  }
+
+  function wireTheme() {
+    const btn = $("#theme-toggle");
+    if (!btn) return;
+    syncThemeToggle(currentTheme());
+
+    btn.addEventListener("click", () => {
+      setTheme(currentTheme() === "dark" ? "light" : "dark", true, true);
+    });
+
+    // Follow the OS while the user has not made an explicit choice.
+    if (window.matchMedia) {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const onChange = (e) => {
+        if (!storedTheme()) applyTheme(e.matches ? "dark" : "light", { animate: true });
+      };
+      if (mq.addEventListener) mq.addEventListener("change", onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    }
+
+    // Keep several open tabs in agreement.
+    window.addEventListener("storage", (e) => {
+      if (e.key === THEME_KEY && (e.newValue === "light" || e.newValue === "dark")) {
+        applyTheme(e.newValue, { animate: false });
+      }
+    });
+  }
+
   function wireModals() {
     $("#btn-team").addEventListener("click", openTeamDialog);
     $$("[data-close-dialog]").forEach((btn) => {
@@ -1706,6 +1848,7 @@
   function init() {
     wireSidebar();
     wireModals();
+    wireTheme();
     render();
   }
 

@@ -7,12 +7,23 @@
   <title>LogLens — Incident Intelligence</title>
   <meta name="description"
     content="LogLens turns 10,000 noisy log lines into a handful of ranked, explained incidents in under a second — offline, rule-free log analysis with root-cause and cascade detection." />
-  <meta name="color-scheme" content="light" />
+  <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#4F46E5" />
   <link rel="icon"
     href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='2' y1='2' x2='38' y2='38' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0%25' stop-color='%234F46E5'/%3E%3Cstop offset='100%25' stop-color='%230EA5E9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='40' height='40' rx='11' fill='url(%23g)'/%3E%3Ccircle cx='18.5' cy='18.5' r='8.5' stroke='%23fff' stroke-width='2.4' fill='none'/%3E%3Crect x='13.5' y='18.5' width='2.2' height='4.2' rx='1.1' fill='%23fff'/%3E%3Crect x='17.4' y='14.2' width='2.2' height='8.5' rx='1.1' fill='%23fff'/%3E%3Crect x='21.3' y='16.4' width='2.2' height='6.3' rx='1.1' fill='%23BAE6FD'/%3E%3Cpath d='M25.2 25.2L30.5 30.5' stroke='%23fff' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <script>
+    /* Runs before first paint so the correct theme is already applied when the
+       page is shown — no flash. Falls back to the OS preference. */
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem("ll-theme"); } catch (e) { }
+      var theme = saved === "light" || saved === "dark" ? saved
+        : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-theme", theme);
+    })();
+  </script>
   <link rel="stylesheet" href="/style.css" />
 </head>
 
@@ -167,6 +178,14 @@
             </div>
           </div>
           <div class="topbar-actions">
+            <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Switch to dark theme"
+              aria-pressed="false" title="Switch theme">
+              <span class="theme-toggle-track" aria-hidden="true">
+                <span class="theme-toggle-icon theme-toggle-sun">☀</span>
+                <span class="theme-toggle-icon theme-toggle-moon">☾</span>
+                <span class="theme-toggle-thumb"></span>
+              </span>
+            </button>
             <button type="button" class="btn" id="btn-team">👥 <span class="team-label">Team ByteForce</span></button>
           </div>
         </header>
