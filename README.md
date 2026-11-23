@@ -21,7 +21,7 @@
 
 On the bundled 10,000-line demo log it reports **8 incidents (+4 background-noise groups)** in about **0.3 seconds**, names the likely trigger (database timeouts in `payment-svc`) and marks the seven groups that started within minutes of it as probable knock-on effects.
 
-**Live demo:** [https://loglens-byteforce.vercel.app](https://loglens-byteforce.vercel.app){:target="_blank"}
+**Live demo:** [https://loglens-byteforce.vercel.app](https://loglens-byteforce.vercel.app)
 
 ---
 
