@@ -1688,6 +1688,93 @@
     $("#sidebar-toggle").setAttribute("aria-expanded", "false");
   }
 
+
+  // ----------------------------------------------------------------- theming
+  const THEME_KEY = "ll-theme";
+
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+  }
+
+  function systemTheme() {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark" : "light";
+  }
+
+  function storedTheme() {
+    try {
+      const v = localStorage.getItem(THEME_KEY);
+      return v === "light" || v === "dark" ? v : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function syncThemeToggle(theme) {
+    const btn = $("#theme-toggle");
+    if (!btn) return;
+    const isDark = theme === "dark";
+    btn.setAttribute("aria-pressed", isDark ? "true" : "false");
+    btn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
+  }
+
+  /**
+   * Swap the theme. Charts bake their colours into the spec when it is built,
+   * so a re-render is needed for them to pick up the new tokens. That re-render
+   * also happens inside the view-transition snapshot, so the user only ever
+   * sees the crossfade, never the DOM being rebuilt.
+   */
+  function applyTheme(theme, opts) {
+    const options = opts || {};
+    const root = document.documentElement;
+    const swap = () => {
+      root.setAttribute("data-theme", theme);
+      syncThemeToggle(theme);
+      if (W.text && W.data) render();      // rebuild charts with new token values
+    };
+
+    if (options.animate && document.startViewTransition &&
+        !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+      document.startViewTransition(swap);
+    } else {
+      swap();
+    }
+  }
+
+  function setTheme(theme, persist, animate) {
+    applyTheme(theme, { animate: animate });
+    if (persist) {
+      try { localStorage.setItem(THEME_KEY, theme); } catch (e) { /* private mode */ }
+    }
+  }
+
+  function wireTheme() {
+    const btn = $("#theme-toggle");
+    if (!btn) return;
+    syncThemeToggle(currentTheme());
+
+    btn.addEventListener("click", () => {
+      setTheme(currentTheme() === "dark" ? "light" : "dark", true, true);
+    });
+
+    // Follow the OS while the user has not made an explicit choice.
+    if (window.matchMedia) {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      const onChange = (e) => {
+        if (!storedTheme()) applyTheme(e.matches ? "dark" : "light", { animate: true });
+      };
+      if (mq.addEventListener) mq.addEventListener("change", onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    }
+
+    // Keep several open tabs in agreement.
+    window.addEventListener("storage", (e) => {
+      if (e.key === THEME_KEY && (e.newValue === "light" || e.newValue === "dark")) {
+        applyTheme(e.newValue, { animate: false });
+      }
+    });
+  }
+
   function wireModals() {
     $("#btn-team").addEventListener("click", openTeamDialog);
     $$("[data-close-dialog]").forEach((btn) => {
@@ -1718,6 +1805,7 @@
   function init() {
     wireSidebar();
     wireModals();
+    wireTheme();
     render();
   }
 
