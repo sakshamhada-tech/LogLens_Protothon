@@ -1721,59 +1721,67 @@
   const REDUCED_MOTION = () =>
     !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
 
-  /* Timings, kept in sync with the llWipe* keyframes in style.css. */
-  const WIPE_SWEEP_MS = 850;   // sheet travels across the viewport
-  const WIPE_SETTLE_MS = 200;  // sheet dissolves off the freshly themed page
+  /* Kept in sync with the llWipe* / llSheet* keyframes in style.css. */
+  const WIPE_MS = 620;          // view-transition clip, and the fallback sheet
 
-  /**
-   * The theme swap itself. Charts bake their colours into the spec when it is
-   * built, so a re-render is needed for them to pick up the new tokens.
-   */
+  /** The theme swap itself. Charts bake their colours at spec-build time, so a
+      re-render is needed for them to pick up the new tokens. */
   function swapTheme(theme) {
     document.documentElement.setAttribute("data-theme", theme);
     syncThemeToggle(theme);
     if (W.text && W.data) render();
   }
 
-  const WIPE_CLASSES = ["theme-wipe", "theme-wipe-to-dark", "theme-wipe-to-light", "theme-wipe-reveal"];
-  let wipeStep = null;
+  const WIPE_CLASSES = ["wipe-down", "wipe-up",
+                        "theme-wipe", "theme-wipe-to-dark", "theme-wipe-to-light", "theme-wipe-reveal"];
+  let wipeTimer = null;
 
-  function endWipe() {
-    if (wipeStep) { clearTimeout(wipeStep); wipeStep = null; }
-    document.documentElement.classList.remove.apply(
-      document.documentElement.classList, WIPE_CLASSES);
+  function clearWipe() {
+    if (wipeTimer) { clearTimeout(wipeTimer); wipeTimer = null; }
+    document.documentElement.classList.remove.apply(document.documentElement.classList, WIPE_CLASSES);
   }
 
   /**
-   * Switch theme with the directional wipe: dark sweeps DOWN from the top,
-   * light sweeps UP from the bottom.
+   * Switch theme with a directional wipe: dark sweeps DOWN from the top, light
+   * sweeps UP from the bottom.
    *
-   * Two phases so the theme change is never visible as a snap:
-   *   1. an opaque sheet in the destination colour sweeps in over the page;
-   *   2. once it covers the viewport, the tokens are swapped underneath it and
-   *      the sheet fades away to reveal the new theme.
-   * Under prefers-reduced-motion the swap happens immediately, with no sheet.
+   * Preferred path is the View Transitions API. The page is snapshotted, the
+   * theme is swapped inside the callback, and the NEW snapshot is clipped in
+   * over the old one — so the real content is always visible and you watch it
+   * change theme, rather than having a solid colour dropped over it.
+   *
+   * Fallback: an opaque sheet in the destination colour sweeps across, then
+   * the swap happens underneath it.
    */
   function applyTheme(theme, opts) {
     const options = opts || {};
     const root = document.documentElement;
+    const dir = theme === "dark" ? "wipe-down" : "wipe-up";
 
     if (!options.animate || REDUCED_MOTION()) {
-      endWipe();
+      clearWipe();
       swapTheme(theme);
       return;
     }
 
-    endWipe();
+    clearWipe();
+
+    if (typeof document.startViewTransition === "function") {
+      root.classList.add(dir);
+      const vt = document.startViewTransition(() => swapTheme(theme));
+      const done = () => { root.classList.remove("wipe-down", "wipe-up"); };
+      vt.finished.then(done, done);
+      return;
+    }
+
+    // fallback: solid sheet, swap underneath it, then dissolve
     root.classList.add("theme-wipe");
     root.classList.add(theme === "dark" ? "theme-wipe-to-dark" : "theme-wipe-to-light");
-
-    wipeStep = setTimeout(() => {
-      // phase 2: the sheet now covers the viewport
+    wipeTimer = setTimeout(() => {
       swapTheme(theme);
       root.classList.add("theme-wipe-reveal");
-      wipeStep = setTimeout(endWipe, WIPE_SETTLE_MS + 40);
-    }, WIPE_SWEEP_MS);
+      wipeTimer = setTimeout(clearWipe, 240);
+    }, WIPE_MS);
   }
 
   function setTheme(theme, persist, animate) {

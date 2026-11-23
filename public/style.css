@@ -407,59 +407,75 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 
 /* --------------------------------------------------------------------------
- Theme transition — directional wipe
- Dark arrives from the top and sweeps down; light returns from the bottom and
- sweeps up.
+ Theme transition — directional wipe over live content
+ Dark sweeps DOWN from the top edge, light returns UP from the bottom.
 
- The sheet is a fixed pseudo-element on <html> at a high z-index, so it is
- reliably ABOVE all app content (the body paints its own background, so
- painting under it would be hidden).
+ Built on the View Transitions API. The browser snapshots the page, we mutate
+ the theme, and the NEW snapshot is revealed by animating its clip-path while
+ the old snapshot sits underneath it. The difference from a plain overlay: the
+ content is never covered by a solid colour — you watch the real page change
+ from one theme to the other, and it stays legible the whole way through.
 
- It travels on `transform`, not clip-path: the WHOLE element moves, so the
- glow on its leading edge travels with the edge. (Clipping a stationary
- gradient leaves the glow parked at the bottom of the element, off-screen.)
+ The default View Transition crossfade is disabled (animation: none on both
+ snapshots) so the only motion is our clip — no ghosting, no double-exposure.
 
- The colour is the DESTINATION theme, not var(--ll-bg): during the sweep the
- page is still on the old theme, so --ll-bg would make the sheet the same
- colour as the page it covers — an invisible curtain. These two constants
- mirror each theme's --ll-bg and are used only by the wipe.
+ Browsers without startViewTransition fall back to the .theme-wipe-* sheet
+ rules further down, which cover the page in the destination colour.
  -------------------------------------------------------------------------- */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+/* old stays put underneath; new is clipped in from the direction of travel */
+::view-transition-new(root) { z-index: 1; }
+::view-transition-old(root) { z-index: 0; }
+
+html.wipe-down::view-transition-new(root) {
+  animation: llWipeDown 0.62s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes llWipeDown {
+  from { clip-path: inset(0 0 100% 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+html.wipe-up::view-transition-new(root) {
+  animation: llWipeUp 0.62s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes llWipeUp {
+  from { clip-path: inset(100% 0 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* the moving edge catches a little light so the boundary reads clearly */
+html.wipe-down::view-transition-new(root),
+html.wipe-up::view-transition-new(root) {
+  filter: drop-shadow(0 0 26px rgba(99, 102, 241, 0.45));
+}
+
+/* ---- Fallback sheet, only used when View Transitions is unavailable ---- */
 .theme-wipe::before {
  content: "";
  position: fixed; inset: 0; z-index: 9999; pointer-events: none;
  will-change: transform, opacity;
 }
-/* dark sweeps DOWN from the top edge */
 .theme-wipe-to-dark::before {
  background: #0B1120;
- box-shadow: 0 0 64px 20px rgba(99, 102, 241, 0.75);
- animation: llWipeDown 0.85s cubic-bezier(0.4, 0, 0.2, 1) both;
+ animation: llSheetDown 0.62s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
-@keyframes llWipeDown {
+@keyframes llSheetDown {
  from { transform: translateY(-100%); }
  to   { transform: translateY(0); }
 }
-/* light returns UP from the bottom edge */
 .theme-wipe-to-light::before {
  background: #FAFBFD;
- box-shadow: 0 0 64px 20px rgba(79, 70, 229, 0.60);
- animation: llWipeUp 0.85s cubic-bezier(0.4, 0, 0.2, 1) both;
+ animation: llSheetUp 0.62s cubic-bezier(0.4, 0, 0.2, 1) both;
 }
-@keyframes llWipeUp {
+@keyframes llSheetUp {
  from { transform: translateY(100%); }
  to   { transform: translateY(0); }
 }
-/* Hand-off: the sheet already covers the viewport and the new theme is live
-   underneath. It dissolves to reveal it. Declared AFTER the two rules above so
-   it wins on source order at equal specificity, and the direction class stays
-   in place because it carries the background colour. */
-.theme-wipe-reveal::before {
- animation: llWipeSettle 0.2s ease-out both;
-}
-@keyframes llWipeSettle {
- from { opacity: 1; }
- to   { opacity: 0; }
-}
+.theme-wipe-reveal::before { animation: llWipeSettle 0.2s ease-out both; }
+@keyframes llWipeSettle { from { opacity: 1; } to { opacity: 0; } }
 
 /* --------------------------------------------------------------------------
  Theme toggle
