@@ -1370,7 +1370,7 @@
       '<span class="footer-brand-name">Log<span>Lens</span></span></div>' +
       '<p class="footer-desc">Turning 10,000 noisy log lines into a handful of ranked, explained incidents ' +
       "in under a second. Built for fast, offline root-cause analysis.</p>" +
-      '<a class="btn btn-sm" href="https://github.com/sakshamhada-tech/LogLens" target="_blank" rel="noopener noreferrer">GitHub Repo ↗</a>' +
+      '<a class="btn btn-sm" href="https://github.com/sakshamhada-tech/LogLens_Protothon" target="_blank" rel="noopener noreferrer">GitHub Repo ↗</a>' +
       "</div>" +
       "<div>" +
       '<div class="ll-footer-col-title">Explore</div>' +
