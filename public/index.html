@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LogLens — Incident Intelligence</title>
+  <meta name="description" content="LogLens turns 10,000 noisy log lines into a handful of ranked, explained incidents in under a second — offline, rule-free log analysis with root-cause and cascade detection." />
+  <meta name="color-scheme" content="light" />
+  <meta name="theme-color" content="#4F46E5" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='2' y1='2' x2='38' y2='38' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0%25' stop-color='%234F46E5'/%3E%3Cstop offset='100%25' stop-color='%230EA5E9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='40' height='40' rx='11' fill='url(%23g)'/%3E%3Ccircle cx='18.5' cy='18.5' r='8.5' stroke='%23fff' stroke-width='2.4' fill='none'/%3E%3Crect x='13.5' y='18.5' width='2.2' height='4.2' rx='1.1' fill='%23fff'/%3E%3Crect x='17.4' y='14.2' width='2.2' height='8.5' rx='1.1' fill='%23fff'/%3E%3Crect x='21.3' y='16.4' width='2.2' height='6.3' rx='1.1' fill='%23BAE6FD'/%3E%3Cpath d='M25.2 25.2L30.5 30.5' stroke='%23fff' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <a class="visually-hidden" href="#main-content">Skip to main content</a>
+
+  <div class="app-shell">
+    <!-- ================= SIDEBAR ================= -->
+    <aside class="sidebar" id="sidebar" aria-label="Analysis controls">
+      <div class="sidebar-brand" id="sidebar-brand"></div>
+      <p class="sidebar-caption">10,000 log lines → a handful of ranked incidents.</p>
+
+      <h2 class="sidebar-section-title">1 · Data Source</h2>
+
+      <button type="button" class="btn btn-primary btn-block" id="btn-load-sample" title="10,000 lines from 5 services: a DB outage in payment-svc cascading everywhere">
+        📂 Load 10K sample log
+      </button>
+      <div class="mt-8">
+        <button type="button" class="btn btn-block" id="btn-load-mini">✨ Try 22-line mini story</button>
+      </div>
+
+      <div class="control mt-16">
+        <div class="control-label"><span>Upload a .log / .txt file</span></div>
+        <label class="file-drop" for="file-input" id="file-drop">
+          <strong>Choose a file</strong> or drop it here<br />
+          .log · .txt · .text · .out
+        </label>
+        <input type="file" id="file-input" class="visually-hidden"
+               accept=".log,.txt,.text,.out,text/plain" />
+        <div class="file-name" id="file-name" hidden></div>
+      </div>
+
+      <div class="control">
+        <label class="control-label" for="paste-input"><span>…or paste log lines</span></label>
+        <textarea id="paste-input" class="ll-textarea" rows="5"
+                  placeholder="2026-10-09T03:00:01Z ERROR [payment-svc] …"></textarea>
+        <div class="mt-8">
+          <button type="button" class="btn btn-block" id="btn-analyse-paste" disabled>Analyse pasted text</button>
+        </div>
+      </div>
+
+      <h2 class="sidebar-section-title">2 · Analysis Controls</h2>
+
+      <div class="control">
+        <label class="control-label" for="min-severity"><span>Minimum severity to analyse</span></label>
+        <select id="min-severity" class="ll-select">
+          <option value="WARN" selected>WARN</option>
+          <option value="ERROR">ERROR</option>
+          <option value="INFO">INFO</option>
+          <option value="DEBUG">DEBUG</option>
+        </select>
+        <div class="control-help">Lines below this level are counted but not grouped into incidents.</div>
+      </div>
+
+      <fieldset class="control" style="border:0;padding:0;margin:0 0 14px 0;">
+        <legend class="control-label" style="padding:0;"><span>Grouping method</span></legend>
+        <div class="radio-group" role="radiogroup" aria-label="Grouping method">
+          <label class="radio-option is-selected" id="method-drain-option">
+            <input type="radio" name="method" value="drain" checked />
+            <span>Drain template mining<small>Fast, token-by-token template learning (default).</small></span>
+          </label>
+          <label class="radio-option is-disabled" id="method-tfidf-option"
+                 title="Available in local/dev install only">
+            <input type="radio" name="method" value="tfidf" disabled />
+            <span>TF-IDF + agglomerative<small>Available in local/dev install only</small></span>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="control">
+        <label class="control-label" for="similarity">
+          <span>Similarity threshold</span>
+          <span class="control-value" id="similarity-value">0.50</span>
+        </label>
+        <input type="range" id="similarity" min="0.3" max="0.9" step="0.05" value="0.5" />
+        <div class="control-help">Higher = stricter grouping (more, smaller incidents).</div>
+      </div>
+
+      <div class="control">
+        <label class="control-label" for="knock-on">
+          <span>Knock-on window</span>
+          <span class="control-value" id="knock-on-value">5 min</span>
+        </label>
+        <input type="range" id="knock-on" min="1" max="30" step="1" value="5" />
+        <div class="control-help">Groups that start within this long after the trigger are marked as knock-on effects.</div>
+      </div>
+
+      <div class="control">
+        <label class="control-label" for="max-cards"><span>Incident cards to show</span></label>
+        <input type="number" id="max-cards" class="ll-input" min="3" max="50" step="1" value="10" />
+      </div>
+
+      <details class="disclosure">
+        <summary>Score weights</summary>
+        <div class="weight-row">
+          <label class="control-label" for="w-count"><span>Count</span><span class="control-value" id="w-count-value">0.30</span></label>
+          <input type="range" id="w-count" min="0" max="1" step="0.05" value="0.3" />
+        </div>
+        <div class="weight-row">
+          <label class="control-label" for="w-severity"><span>Severity</span><span class="control-value" id="w-severity-value">0.25</span></label>
+          <input type="range" id="w-severity" min="0" max="1" step="0.05" value="0.25" />
+        </div>
+        <div class="weight-row">
+          <label class="control-label" for="w-services"><span>Services</span><span class="control-value" id="w-services-value">0.20</span></label>
+          <input type="range" id="w-services" min="0" max="1" step="0.05" value="0.2" />
+        </div>
+        <div class="weight-row">
+          <label class="control-label" for="w-growth"><span>Growth</span><span class="control-value" id="w-growth-value">0.15</span></label>
+          <input type="range" id="w-growth" min="0" max="1" step="0.05" value="0.15" />
+        </div>
+        <div class="weight-row">
+          <label class="control-label" for="w-start"><span>Start</span><span class="control-value" id="w-start-value">0.10</span></label>
+          <input type="range" id="w-start" min="0" max="1" step="0.05" value="0.1" />
+        </div>
+        <div class="control-help">Points = weight × normalised factor ÷ Σweights × 100.</div>
+      </details>
+
+      <div class="control mt-16">
+        <label class="check-row" for="show-background">
+          <input type="checkbox" id="show-background" checked />
+          <span>Show background-noise groups</span>
+        </label>
+      </div>
+
+      <div class="mt-16">
+        <button type="button" class="btn btn-ghost btn-block btn-sm" id="btn-back-home">← Back to landing page</button>
+      </div>
+    </aside>
+
+    <button type="button" class="sidebar-backdrop" id="sidebar-backdrop" aria-label="Close controls" tabindex="-1"></button>
+
+    <!-- ================= MAIN ================= -->
+    <div class="main-wrap">
+      <div class="main-inner">
+        <header class="ll-topbar">
+          <div class="ll-brand-wrap">
+            <button type="button" class="btn btn-icon sidebar-toggle" id="sidebar-toggle" aria-label="Open analysis controls" aria-expanded="false" aria-controls="sidebar">☰</button>
+            <div id="brand-logo"></div>
+            <div class="brand-block">
+              <div class="ll-brand-title">Log<span class="brand-accent">Lens</span>
+                <span class="ll-status-pill" style="margin-left:8px;vertical-align:middle;"><span class="ll-status-dot"></span>Local Engine</span>
+              </div>
+              <div class="ll-brand-sub">Incident Intelligence · Offline, Rule-Free Log Analysis</div>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <button type="button" class="btn" id="btn-team">👥 <span class="team-label">Team ByteForce</span></button>
+          </div>
+        </header>
+
+        <main id="main-content">
+          <!-- Loading / error strips -->
+          <div class="loading-strip" id="loading-strip" role="status" aria-live="polite">
+            <span class="spinner" aria-hidden="true"></span>
+            <span id="loading-text">Parsing and grouping logs…</span>
+          </div>
+          <div id="error-slot" aria-live="assertive"></div>
+
+          <div id="view-slot" aria-live="polite"></div>
+        </main>
+
+        <footer id="footer-slot"></footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= MODALS ================= -->
+  <dialog class="ll-dialog" id="dialog-team" aria-labelledby="dialog-team-title">
+    <div class="dialog-head">
+      <h2 class="dialog-title" id="dialog-team-title">Team ByteForce</h2>
+      <button type="button" class="dialog-close" data-close-dialog aria-label="Close team dialog">✕</button>
+    </div>
+    <div class="dialog-body" id="team-dialog-body"></div>
+  </dialog>
+
+  <dialog class="ll-dialog dialog-sm" id="dialog-about" aria-labelledby="dialog-about-title">
+    <div class="dialog-head">
+      <h2 class="dialog-title" id="dialog-about-title">About LogLens</h2>
+      <button type="button" class="dialog-close" data-close-dialog aria-label="Close about dialog">✕</button>
+    </div>
+    <div class="dialog-body">
+      <p style="color:#475569;font-size:0.9rem;line-height:1.6;margin:0 0 14px 0;">
+        <strong>LogLens</strong> eliminates the 3 a.m. log-scrolling nightmare by turning massive raw log files
+        into a handful of ranked, explained incidents in under a second.
+      </p>
+      <ul class="about-list">
+        <li><strong>100% Local &amp; Offline</strong> — runs completely on the server with zero external API keys.</li>
+        <li><strong>Rule-Free Pattern Mining</strong> — placeholder normalisation and Drain template mining (plus a TF-IDF fallback in local installs) group unseen errors automatically.</li>
+        <li><strong>Transparent Impact Ranking</strong> — every group is scored 0–100 across five explainable factors with live-tunable weights and a likely-trigger cascade detection.</li>
+      </ul>
+      <div class="about-metrics">
+        <div class="about-metric">
+          <div class="about-metric-value">10,000 Lines</div>
+          <div class="about-metric-label">~0.3 s</div>
+        </div>
+        <div class="about-metric">
+          <div class="about-metric-value">100%</div>
+          <div class="about-metric-label">Offline Local</div>
+        </div>
+        <div class="about-metric">
+          <div class="about-metric-value">44 / 44</div>
+          <div class="about-metric-label">Pytest Suite</div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="ll-dialog dialog-sm" id="dialog-contact" aria-labelledby="dialog-contact-title">
+    <div class="dialog-head">
+      <h2 class="dialog-title" id="dialog-contact-title">Contact Us</h2>
+      <button type="button" class="dialog-close" data-close-dialog aria-label="Close contact dialog">✕</button>
+    </div>
+    <div class="dialog-body">
+      <p class="modal-lead">Have feedback, questions, or collaboration ideas for Team ByteForce?</p>
+      <form id="contact-form" novalidate>
+        <div class="form-field">
+          <label for="contact-name">Your Name</label>
+          <input type="text" id="contact-name" class="ll-input" placeholder="e.g. Developer / Reviewer Name" autocomplete="name" />
+        </div>
+        <div class="form-field">
+          <label for="contact-message">Message or Feedback</label>
+          <textarea id="contact-message" class="ll-textarea" rows="4" placeholder="Share your thoughts about LogLens…"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Send Feedback</button>
+      </form>
+      <div class="form-success" id="contact-success" hidden role="status"></div>
+      <div class="modal-links">
+        <a href="https://github.com/sakshamhada-tech/LogLens" target="_blank" rel="noopener noreferrer">GitHub Repository ↗</a>
+        <span aria-hidden="true">·</span>
+        <a href="https://www.linkedin.com/in/anurag-tiwari-2b1913427/" target="_blank" rel="noopener noreferrer">Team Leader LinkedIn ↗</a>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Vega-Lite stack, pinned. Loaded async; the app degrades gracefully without it. -->
+  <script src="https://cdn.jsdelivr.net/npm/vega@5.30.0/build/vega.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-lite@5.21.0/build/vega-lite.min.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/vega-embed@6.26.0/build/vega-embed.min.js" defer></script>
+  <script src="/app.js" defer></script>
+</body>
+</html>

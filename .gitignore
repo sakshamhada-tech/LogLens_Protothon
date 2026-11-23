@@ -6,8 +6,11 @@ __pycache__/
 .venv/
 venv/
 
-# Streamlit
-.streamlit/secrets.toml
+# Vercel
+.vercel/
+.env
+.env.*
+!.env.example
 
 # Editors / OS
 .vscode/

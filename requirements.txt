@@ -1,9 +1,7 @@
-# LogLens runtime dependencies (all open source, no paid APIs, works offline)
-streamlit>=1.50
-pandas>=2.0
-numpy>=1.24
-scikit-learn>=1.3
-altair>=5.0
-
-# Development / tests (optional)
-pytest>=7.0
+# Runtime dependencies — this is what Vercel installs.
+# Deliberately minimal: scikit-learn is NOT here (it would blow the 250 MB
+# bundle limit). TF-IDF grouping is therefore disabled in the hosted build;
+# install requirements-dev.txt locally to use it.
+fastapi>=0.115
+pandas>=2.2
+numpy>=1.26,<3

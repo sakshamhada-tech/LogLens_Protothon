@@ -1,0 +1,29 @@
+# Tests and local dev files are not part of the deployed function/static site.
+tests/
+.devcontainer/
+.github/
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+# Local-only tooling and dependencies
+generate_sample_log.py
+requirements-dev.txt
+
+# sample_logs/ is copied into public/sample_logs/ (the copy that is served)
+sample_logs/
+
+# Markdown other than the README, plus the pitch deck
+*.md
+!README.md
+*.pdf
+
+# Local scratch
+.vercel/
+.DS_Store
+*.tmp
+
+# Local dev launcher
+dev.py
