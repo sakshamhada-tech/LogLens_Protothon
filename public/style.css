@@ -120,9 +120,6 @@ button, input, select, textarea { font: inherit; color: inherit; }
   white-space: nowrap; border: 0;
 }
 
-/* Mobile sidebar toggle */
-.sidebar-toggle { display: none; }
-
 @media (max-width: 1024px) {
   .app-shell { display: block; }
   .sidebar {
@@ -139,11 +136,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   .sidebar.open { transform: translateX(0); }
   .sidebar-backdrop {
     position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45);
-    z-index: 55; border: 0; padding: 0; display: none;
+    z-index: 55; border: 0; padding: 0;
   }
   .sidebar-backdrop.show { display: block; }
   .main-wrap { padding: 14px 16px 8px 16px; }
-  .sidebar-toggle { display: inline-flex; }
 }
 
 /* --------------------------------------------------------------------------
@@ -199,6 +195,18 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn-ghost:hover { background: #F1F5F9; }
 .btn-sm { padding: 6px 11px; font-size: 0.78rem; border-radius: 9px; }
 .btn-icon { padding: 8px; width: 38px; height: 38px; }
+
+/* --------------------------------------------------------------------------
+   Mobile drawer chrome
+   Declared after .btn on purpose: `.btn` sets `display: inline-flex`, and with
+   equal specificity the later rule wins. Both must be hidden on wide screens.
+   -------------------------------------------------------------------------- */
+.sidebar-toggle { display: none; }
+.sidebar-backdrop { display: none; }
+
+@media (max-width: 1024px) {
+  .sidebar-toggle { display: inline-flex; }
+}
 
 /* --------------------------------------------------------------------------
    Sidebar controls
