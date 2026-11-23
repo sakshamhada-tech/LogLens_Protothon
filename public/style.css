@@ -355,18 +355,48 @@ button, input, select, textarea { font: inherit; color: inherit; }
  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
  border-radius: 11px; border: 1px solid var(--ll-border); background: var(--ll-card);
  color: var(--ll-ink-body); padding: 9px 14px; font-size: 0.84rem; font-weight: 600;
- cursor: pointer; text-decoration: none; transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
- line-height: 1.25;
+ cursor: pointer; text-decoration: none; line-height: 1.25;
+ position: relative; overflow: hidden;
+ /* only compositor-friendly properties: no layout shift on hover */
+ transition:
+ transform 0.18s cubic-bezier(0.34, 1.4, 0.64, 1),
+ box-shadow 0.18s ease,
+ background 0.16s ease,
+ border-color 0.16s ease;
 }
-.btn:hover { transform: translateY(-1px); box-shadow: var(--ll-shadow-sm); background: var(--ll-surface-2); }
-.btn:active { transform: translateY(0); }
+/* hover: rise + deepen the shadow. The lift scales with button size so a
+   small icon button does not jump as far as a large CTA. */
+.btn:hover {
+ transform: translateY(-2px);
+ box-shadow: var(--ll-shadow-md);
+ background: var(--ll-surface-2);
+ border-color: var(--ll-border-strong);
+}
+.btn-lg:hover { transform: translateY(-3px); }
+/* press: settle back and compress a hair — this is what makes it read as a
+   physical surface rather than a rectangle changing colour */
+.btn:active { transform: translateY(0) scale(0.97); box-shadow: var(--ll-shadow-sm); transition-duration: 0.08s; }
 .btn[disabled] { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn[disabled]:hover { transform: none; box-shadow: none; border-color: var(--ll-border); background: var(--ll-card); }
 .btn-primary {
  background: linear-gradient(135deg, var(--ll-brand-fill), var(--ll-brand-fill-2));
  border-color: var(--ll-brand-fill-2); color: var(--ll-on-colour);
  box-shadow: 0 4px 14px var(--ll-brand-glow);
 }
 .btn-primary:hover { background: linear-gradient(135deg, var(--ll-brand-fill-2), var(--ll-brand-fill-3)); }
+
+/* Shine sweep: a diagonal highlight parked off to the left, released across
+   the button on hover. Pure background-position, so no extra DOM and no
+   layout work. */
+.btn-primary::after {
+ content: ""; position: absolute; inset: 0; pointer-events: none;
+ background: linear-gradient(105deg, transparent 32%, var(--ll-on-brand-glass) 50%, transparent 68%);
+ background-size: 250% 100%; background-position: 175% 0;
+ opacity: 0;
+ transition: background-position 0.62s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s ease;
+}
+.btn-primary:hover::after { background-position: -75% 0; opacity: 1; }
+.btn-primary[disabled]::after { display: none; }
 .btn-lg { padding: 12px 22px; font-size: 0.95rem; border-radius: 13px; }
 .btn-block { width: 100%; }
 .btn-ghost { background: transparent; border-color: transparent; color: var(--ll-muted); }
@@ -374,6 +404,62 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .btn-sm { padding: 6px 11px; font-size: 0.78rem; border-radius: 9px; }
 .btn-icon { padding: 8px; width: 38px; height: 38px; }
 
+
+
+/* --------------------------------------------------------------------------
+ Theme transition — directional wipe
+ Dark arrives from the top and sweeps down; light returns from the bottom and
+ sweeps up.
+
+ The sheet is a fixed pseudo-element on <html> at a high z-index, so it is
+ reliably ABOVE all app content (the body paints its own background, so
+ painting under it would be hidden).
+
+ It travels on `transform`, not clip-path: the WHOLE element moves, so the
+ glow on its leading edge travels with the edge. (Clipping a stationary
+ gradient leaves the glow parked at the bottom of the element, off-screen.)
+
+ The colour is the DESTINATION theme, not var(--ll-bg): during the sweep the
+ page is still on the old theme, so --ll-bg would make the sheet the same
+ colour as the page it covers — an invisible curtain. These two constants
+ mirror each theme's --ll-bg and are used only by the wipe.
+ -------------------------------------------------------------------------- */
+.theme-wipe::before {
+ content: "";
+ position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+ will-change: transform, opacity;
+}
+/* dark sweeps DOWN from the top edge */
+.theme-wipe-to-dark::before {
+ background: #0B1120;
+ box-shadow: 0 0 64px 20px rgba(99, 102, 241, 0.75);
+ animation: llWipeDown 0.85s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes llWipeDown {
+ from { transform: translateY(-100%); }
+ to   { transform: translateY(0); }
+}
+/* light returns UP from the bottom edge */
+.theme-wipe-to-light::before {
+ background: #FAFBFD;
+ box-shadow: 0 0 64px 20px rgba(79, 70, 229, 0.60);
+ animation: llWipeUp 0.85s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+@keyframes llWipeUp {
+ from { transform: translateY(100%); }
+ to   { transform: translateY(0); }
+}
+/* Hand-off: the sheet already covers the viewport and the new theme is live
+   underneath. It dissolves to reveal it. Declared AFTER the two rules above so
+   it wins on source order at equal specificity, and the direction class stays
+   in place because it carries the background colour. */
+.theme-wipe-reveal::before {
+ animation: llWipeSettle 0.2s ease-out both;
+}
+@keyframes llWipeSettle {
+ from { opacity: 1; }
+ to   { opacity: 0; }
+}
 
 /* --------------------------------------------------------------------------
  Theme toggle
@@ -690,7 +776,13 @@ input[type="range"] {
  border-radius: 999px; padding: 6px 13px; font-size: 0.78rem; font-weight: 600;
  cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
 }
-.pill:hover { border-color: var(--ll-brand-line); color: var(--ll-brand-ink); }
+.pill {
+ transition: transform 0.16s cubic-bezier(0.34, 1.4, 0.64, 1),
+             border-color 0.15s ease, color 0.15s ease, background 0.15s ease,
+             box-shadow 0.15s ease;
+}
+.pill:hover { border-color: var(--ll-brand-line); color: var(--ll-brand-ink); transform: translateY(-1px); }
+.pill:active { transform: translateY(0) scale(0.96); }
 .pill[aria-pressed="true"] {
  background: var(--ll-brand-soft); border-color: var(--ll-brand-line-strong); color: var(--ll-brand-ink);
  box-shadow: 0 1px 4px var(--ll-pill-glow);
@@ -998,7 +1090,8 @@ dialog.ll-dialog::backdrop { background: var(--ll-overlay); backdrop-filter: blu
  text-decoration: none; transition: transform 0.18s ease, opacity 0.18s ease;
  margin-right: 8px; margin-top: 6px;
 }
-.ll-social-btn:hover { transform: translateY(-1px); opacity: 0.92; }
+.ll-social-btn:hover { transform: translateY(-2px); opacity: 0.95; box-shadow: var(--ll-shadow-md); }
+.ll-social-btn:active { transform: translateY(0) scale(0.97); }
 .ll-btn-gh { background: var(--ll-btn-ink); color: var(--ll-on-colour); }
 .ll-btn-li { background: var(--ll-card); color: var(--ll-sev-info-fg); border: 1px solid var(--ll-sev-info-line); }
 

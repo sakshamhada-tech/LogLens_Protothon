@@ -1718,27 +1718,62 @@
     btn.setAttribute("aria-label", isDark ? "Switch to light theme" : "Switch to dark theme");
   }
 
+  const REDUCED_MOTION = () =>
+    !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  /* Timings, kept in sync with the llWipe* keyframes in style.css. */
+  const WIPE_SWEEP_MS = 850;   // sheet travels across the viewport
+  const WIPE_SETTLE_MS = 200;  // sheet dissolves off the freshly themed page
+
   /**
-   * Swap the theme. Charts bake their colours into the spec when it is built,
-   * so a re-render is needed for them to pick up the new tokens. That re-render
-   * also happens inside the view-transition snapshot, so the user only ever
-   * sees the crossfade, never the DOM being rebuilt.
+   * The theme swap itself. Charts bake their colours into the spec when it is
+   * built, so a re-render is needed for them to pick up the new tokens.
+   */
+  function swapTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    syncThemeToggle(theme);
+    if (W.text && W.data) render();
+  }
+
+  const WIPE_CLASSES = ["theme-wipe", "theme-wipe-to-dark", "theme-wipe-to-light", "theme-wipe-reveal"];
+  let wipeStep = null;
+
+  function endWipe() {
+    if (wipeStep) { clearTimeout(wipeStep); wipeStep = null; }
+    document.documentElement.classList.remove.apply(
+      document.documentElement.classList, WIPE_CLASSES);
+  }
+
+  /**
+   * Switch theme with the directional wipe: dark sweeps DOWN from the top,
+   * light sweeps UP from the bottom.
+   *
+   * Two phases so the theme change is never visible as a snap:
+   *   1. an opaque sheet in the destination colour sweeps in over the page;
+   *   2. once it covers the viewport, the tokens are swapped underneath it and
+   *      the sheet fades away to reveal the new theme.
+   * Under prefers-reduced-motion the swap happens immediately, with no sheet.
    */
   function applyTheme(theme, opts) {
     const options = opts || {};
     const root = document.documentElement;
-    const swap = () => {
-      root.setAttribute("data-theme", theme);
-      syncThemeToggle(theme);
-      if (W.text && W.data) render();      // rebuild charts with new token values
-    };
 
-    if (options.animate && document.startViewTransition &&
-        !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
-      document.startViewTransition(swap);
-    } else {
-      swap();
+    if (!options.animate || REDUCED_MOTION()) {
+      endWipe();
+      swapTheme(theme);
+      return;
     }
+
+    endWipe();
+    root.classList.add("theme-wipe");
+    root.classList.add(theme === "dark" ? "theme-wipe-to-dark" : "theme-wipe-to-light");
+
+    wipeStep = setTimeout(() => {
+      // phase 2: the sheet now covers the viewport
+      swapTheme(theme);
+      root.classList.add("theme-wipe-reveal");
+      wipeStep = setTimeout(endWipe, WIPE_SETTLE_MS + 40);
+    }, WIPE_SWEEP_MS);
   }
 
   function setTheme(theme, persist, animate) {
